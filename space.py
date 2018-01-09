@@ -1,6 +1,7 @@
 import gym
 import torch
 
+
 class TensorBox(gym.Space):
     """
     Implementing the Box space with torch.Tensor instead of ndarray.

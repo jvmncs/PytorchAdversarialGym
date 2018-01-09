@@ -8,6 +8,8 @@ from torch.utils.data.sampler import Sampler
 
 from .space import TensorBox
 from .util import UniformSampler
+
+
 class AdversarialEnv(gym.Env):
     """
     An environment for generating and defending against adversarial examples with PyTorch models
@@ -28,7 +30,7 @@ class AdversarialEnv(gym.Env):
             specific class.  Default is False.
         batch_size (int, optional): Number of instances for the target_model to classify per step.
         episode_length (positive integer, optional): Specifies the number of steps to include in
-            each episode.  Default is len(dataset)/.
+            each episode.  Default is len(dataset)//batch_size.
         sampler (subclass of torch.utils.data.Sampler, optional): Specifies the sampling strategy.
             Default is uniform random sampling with replacement over the entire dataset.
         num_workers (integer, optional): Argument to be passed to DataLoader specifying number of
