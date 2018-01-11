@@ -7,16 +7,17 @@ from torch.autograd import Variable
 import random
 
 class Untargeted(gym.Wrapper):
-	def __init__(self, env, scale = 1, norm = None):
+	def __init__(self, env, scale = 1.):
 		super(Untargeted, self).__init__(env)
 		self.reward_range = (-scale, scale)
-		self.norm = norm
 
 	def _get_reward(self, obs, action):
 		# Establish ground truth for image
 		ground_truth = obs[1]
 
-		# Run through target model
+		# Attack target model
+		# TODO: Consider abstracting this and allowing it to be overridden,
+		# or at least allow for different output functions to be used
 		action = Variable(action, volatile = True)
         outs = self.target_model(action)
         outs = nn.functional.sigmoid(outs)
@@ -28,7 +29,7 @@ class Untargeted(gym.Wrapper):
         else:
 			norm_penalty = 0
 
-		# Calculate reward and track info
+		# Compute reward, gather info
 		reward = (ground_truth != prediction.data).float() * confidence.data
 			- (ground_truth == prediction.data).float() * confidence.data
 			- norm_penalty
@@ -39,16 +40,13 @@ class Untargeted(gym.Wrapper):
 
 		return reward, info
 
-	def norm_on_batch(self, input, p):
-		# Assume dimension 0 is batch dimension
-        norm_penalty = input
-        while len(norm_penalty.size())>1:
-            norm_penalty = torch.norm(norm_penalty, p, -1)
-		return norm_penalty
 
-class Targeted(gym.Wrapper):
-	def __init__(self, env, target_label = 0, skip_target_class = True, scale = 1, norm = None):
-		super(Targeted, self).__init__(env)
+class SingleTargeted(gym.Wrapper):
+	def __init__(self, env, target_class = 0, skip_target_class = True, scale = 1., norm = None):
+		super(SingleTargeted, self).__init__(env)
+		self.target_class = target_class
+		self.skip_target_class = skip_target_class
+
 		self.reward_range = (-scale, scale)
 		self.norm = norm
 
@@ -58,10 +56,10 @@ class Targeted(gym.Wrapper):
             if self.skip_target_class:
 				self.successor = self.iterator.__next__()
                 while (self.successor[1] == self.target_class).any():
-                	newly_sampled = self._sample_for_skip(self.batch_size)
+                	newly_sampled = self._sample_for_skip((self.successor[1] == self.target_class).sum())
                 	target_mask = (self.successor[1] == self.target_class)
-                    self.successor[0][target_mask] = newly_sampled[0][target_mask]
-                    self.successor[1][target_mask] = newly_sampled[1][target_mask]
+                    self.successor[0][target_mask] = newly_sampled[0]
+                    self.successor[1][target_mask] = newly_sampled[1]
             else:
                 self.successor = self.iterator.__next__()
             self.ix += 1
@@ -75,22 +73,101 @@ class Targeted(gym.Wrapper):
             self.successor[1] = self.successor[1].cuda()
         else:
             action = action.cpu()
-        reward, info = self._get_reward(current_obs, action)
+        reward, info = self._get_reward(current_obs, action, **kwargs)
         return self.successor, reward, self.done, info
+
+	def _get_reward(self, obs, action):
+		# Establish ground truth for image
+		ground_truth = obs[1]
+
+		# Just here for testing
+		if self.skip_target_class:
+			assert ground_truth != self.target_class
+
+		# Attack target model
+		# TODO: Consider abstracting this and allowing it to be overridden,
+		# or at least allow for different output functions to be used
+		action = Variable(action, volatile = True)
+        outs = self.target_model(action)
+        outs = nn.functional.sigmoid(outs)
+		confidence, prediction = torch.max(outs, 1)
+
+		# Determine norm penalty
+		if self.norm is not None:
+            norm_penalty = self.norm_on_batch(action.data - obs[0], self.norm)
+        else:
+			norm_penalty = 0
+
+		# Compute reward, gather info
+		reward = reward = (self.target_class == prediction.data).float() * confidence.data
+			- (self.target_class != prediction.data).float() * confidence.data
+			- norm_penalty
+		info = {'label':ground_truth,
+			'prediction':prediction.data,
+			'confidence':confidence.data,
+			'norm':norm_penalty if self.norm is not None else None}
+
+		return reward, info
 
     def _sample_for_skip(self, batch_size):
     	# Set up tensor types
     	Tensor = torch.cuda.Tensor if self.use_cuda else torch.Tensor
     	LongTensor = torch.cuda.LongTensor if self.use_cuda else torch.LongTensor
-    	# Sample from dataset -- necessary so we don't screw up the DataLoader
+
+    	# Sample from dataset -- necessary so we don't mess up the index of the DataLoader
     	collection = [self.dataset[int(Tensor(1).random_(0,len(self.dataset), generator = self.torch_rng)[0])] for x in range(batch_size)]
-    	# Reformat back to standard format for get_item
+
+    	# Collect batch into tensor
     	collection = tuple(zip(*collection))
     	collection[0] = torch.cat(map(lambda x: torch.unsqueeze(x, 0), collection[0]))
-    	collection[1] = torch.cuda.LongTensor(collected[1]) if self.use_cuda else torch.LongTensor(collected[1])
+    	collection[1] = LongTensor(collected[1]))
+
     	return collection
 
-	def _get_reward(self, obs, action):
+
+class DynamicTargeted(gym.Wrapper):
+	def __init__(self, env, scale = 1., norm = None):
+		super(DynamicTargeted, self).__init__(env)
+		
+		self.reward_range = (-scale, scale)
+		self.norm = norm
+
+	def _get_reward(self, obs, action, **kwargs):
 		# Establish ground truth for image
-		#ground_truth
-		pass
+		ground_truth = obs[1]
+
+		# Attack target model
+		# TODO: Consider abstracting this and allowing it to be overridden,
+		# or at least allow for different output functions to be used
+		action = Variable(action, volatile = True)
+        outs = self.target_model(action)
+        outs = nn.functional.sigmoid(outs)
+		confidence, prediction = torch.max(outs, 1)
+
+		# Make sure target_class is in the right range
+		# Unpack target class
+		try:
+			target_class = kwargs['target_class']
+			assert (type(target_class) is int) and (target_class >= 0) and (target_class <= outs.size(-1) - 1)
+		except KeyError:
+			raise gym.error.Error('DynamicTargeted wrapper requires keyword argument \'target_class\' for each call of \'step\'.')
+		except AssertionError:
+			raise gym.error.Error('Keyword argument \'target_class\' must be within range of model.')
+
+		# Determine norm penalty
+		if self.norm is not None:
+            norm_penalty = self.norm_on_batch(action.data - obs[0], self.norm)
+        else:
+			norm_penalty = 0
+
+		# Compute reward, gather info
+		reward = reward = (target_class == prediction.data).float() * confidence.data
+			- (target_class != prediction.data).float() * confidence.data
+			- norm_penalty
+		info = {'label':ground_truth,
+			'prediction':prediction.data,
+			'confidence':confidence.data,
+			'norm':norm_penalty if self.norm is not None else None}
+
+		return reward, info
+

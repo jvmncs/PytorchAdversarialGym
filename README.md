@@ -2,6 +2,8 @@ PytorchAdversarialGym
 =====================
 **A PyTorch-integrated Gym environment for enabling and evaluating new research into attacking and defending neural networks with adversarial perturbations.**  While most research into adversarial perturbations has focused on gradient, decision boundary, or transferability methods, this environment generalizes the adversarial attack problem as a Markov decision process.  This allows for methods from reinforcement learning to be easily applied, a possibility that has only been rarely suggested or investigated in the ML security literature.  In the spirit of Gym, no assumptions are made about the structure of your agent; in particular, adversaries can be either MDP-aware or MDP-agnostic.
 
+Note: Still in development, but master branch should be self-contained.
+
 Dependencies:
 - [OpenAI Gym](https://github.com/openai/gym)
 - [PyTorch](https://pytorch.org/)
@@ -16,8 +18,12 @@ Roadmap:
 - [x] Generalize to non-CIFAR Datasets
 - [x] Extend to custom samplers to expose environment dynamics
 - [x] Extend for different reward functions
-- [ ] Refactor to incorporate reward Wrappers
+- [x] Refactor to incorporate reward Wrappers
+- [ ] Implement strict argument for strict epsilon ball enforcement
 - [ ] Test reward Wrappers
+- [ ] Comment/document reward Wrappers
+- [ ] Implement wrapper for changing image space (should just be a matter of readjusting TensorBox constructor)
+- [ ] Test new features
 - [ ] Add [BadNets](https://arxiv.org/abs/1708.06733) functionality
 - [ ] Make UniformSampler memory-efficient
 - [ ] Minimally test environment with torchvision models (esp. non-CIFAR datasets)

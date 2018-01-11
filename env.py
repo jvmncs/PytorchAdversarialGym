@@ -10,7 +10,7 @@ from .space import TensorBox
 from .util import UniformSampler
 
 
-class AdversarialEnv(gym.Env):
+class PytorchAdversarialEnv(gym.Env):
     """
     An environment for generating and defending against adversarial examples with PyTorch models
         and Datasets.
@@ -21,13 +21,8 @@ class AdversarialEnv(gym.Env):
         dataset (subclass of torch.utils.data.Dataset): The dataset we're using to attack.
             Currently, only Pytorch Dataset objects are supported.
             Note: ToTensor transform must be included.
-        target_class (int, optional): If an integer, positive reward requires target_model to
-            classify all instances as target_class. Otherwise, positive reward requires
-            misclassification.
-        skip_target_class (boolean, optional): Whether to allow instances of label target_class to
-            be observations.  Can works if target_class is a valid integer.
-        defend_mode (bool, optional): If True, positive reward requires correctly classifying
-            specific class.  Default is False.
+        norm (float, optional): P value of L-p norm to use for contrained penalty on reward.
+            Only called in reward wrappers. If None, no norm penalty is taken.
         batch_size (int, optional): Number of instances for the target_model to classify per step.
         episode_length (positive integer, optional): Specifies the number of steps to include in
             each episode.  Default is len(dataset)//batch_size.
@@ -42,11 +37,9 @@ class AdversarialEnv(gym.Env):
             For this reason, we disable CUDNN if a seed is specified.
 
     """
-    def __init__(self, target_model, dataset, target_class = None, skip_target_class = True,
-                norm = None, defend_mode = False, batch_size = 1, episode_length = None,
-                sampler = None, num_workers = 0, use_cuda = torch.cuda.is_available(),
-                seed = None):
-        super().__init__()
+    def __init__(self, target_model, dataset, norm = None, batch_size = 1, episode_length = None,
+            sampler = None, num_workers = 0, use_cuda = torch.cuda.is_available(), seed = None):
+        super(PytorchAdversarialEnv).__init__()
         self.use_cuda = use_cuda
         if seed is not None:
             torch.backend.cudnn.enabled = False
@@ -72,9 +65,6 @@ class AdversarialEnv(gym.Env):
             raise gym.error.Error('Sampler type {} not supported.'.format(type(self.sampler)) +
                                'Currently, sampler must be a subclass of torch.utils.data.sampler.Sampler.')
 
-        self.target_class = target_class
-        self.skip_target_class = self.target_class is not None and skip_target_class
-        self.defend_mode = defend_mode
         self.batch_size = batch_size
         self.norm = norm
         self.num_workers = num_workers
@@ -97,7 +87,7 @@ class AdversarialEnv(gym.Env):
             self.successor[1] = self.successor[1].cuda()
         else:
             action = action.cpu()
-        reward, info = self._get_reward(current_obs, action)
+        reward, info = self._get_reward(current_obs, action, **kwargs)
         return self.successor, reward, self.done, info
 
     def _seed(self, seed):
@@ -119,9 +109,14 @@ class AdversarialEnv(gym.Env):
         self.ix = 0
         return self.successor
 
-    def _get_reward(self, obs, actio, **kwargs): raise NotImplementedError
+    def _get_reward(self, obs, action, **kwargs): raise NotImplementedError
 
-    def norm_on_batch(self, input, p): raise NotImplementedError
+    def norm_on_batch(self, input, p):
+        # Assume dimension 0 is batch dimension
+        norm_penalty = input
+        while len(norm_penalty.size())>1:
+            norm_penalty = torch.norm(norm_penalty, p, -1)
+        return norm_penalty
 
     def _check_model(self):
         return isinstance(self.target_model, nn.Module)
