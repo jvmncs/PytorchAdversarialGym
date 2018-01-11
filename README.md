@@ -18,5 +18,6 @@ Roadmap:
 - [x] Extend for different reward functions
 - [ ] Refactor to incorporate RewardWrappers
 - [ ] Add [BadNets](https://arxiv.org/abs/1708.06733) functionality
+- [ ] Make UniformSampler memory-efficient
 - [ ] Minimally test environment with torchvision models (esp. non-CIFAR datasets)
 - [ ] Spec out rewriting for Foolbox integration/decide if it's worth it
