@@ -16,7 +16,9 @@ Roadmap:
 - [x] Generalize to non-CIFAR Datasets
 - [x] Extend to custom samplers to expose environment dynamics
 - [x] Extend for different reward functions
-- [ ] Refactor to incorporate RewardWrappers
+- [ ] Refactor to incorporate reward Wrappers
+- [ ] Test reward Wrappers
 - [ ] Add [BadNets](https://arxiv.org/abs/1708.06733) functionality
+- [ ] Make UniformSampler memory-efficient
 - [ ] Minimally test environment with torchvision models (esp. non-CIFAR datasets)
 - [ ] Spec out rewriting for Foolbox integration/decide if it's worth it

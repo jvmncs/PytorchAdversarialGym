@@ -82,15 +82,10 @@ class AdversarialEnv(gym.Env):
         self.iterator = iter(self.data_loader)
         self._reset()
 
-    def _step(self, action):
+    def _step(self, action, **kwargs):
         try:
             current_obs = self.successor
-            if self.skip_target_class:
-                self.successor = self.iterator.__next__()
-                while (self.successor[1] == self.target_class).any():
-                    self.successor = self.iterator.__next__()
-            else:
-                self.successor = self.iterator.__next__()
+            self.successor = self.iterator.__next__()
             self.ix += 1
             if self.ix >= self.episode_length:
                 raise StopIteration
@@ -124,33 +119,9 @@ class AdversarialEnv(gym.Env):
         self.ix = 0
         return self.successor
 
-    def _get_reward(self, obs, action):
-        ground_truth = obs[1]
-        target_label = self.target_class
-        if self.target_class is not None and self.defend_mode:
-            raise gym.error.Error("Argument target_class must be None if using defend_mode.")
-        if self.defend_mode:
-            target_label = ground_truth
-        action = Variable(action, volatile = True)
-        outs = self.target_model(action)
-        outs = nn.functional.sigmoid(outs)
-        confidence, prediction = torch.max(outs, 1)
-        if self.norm is not None:
-            norm_penalty = self.norm_on_batch(action.data - obs[0], self.norm)
-        else:
-            norm_penalty = 0
-        if target_label is not None:
-            reward = (target_label == prediction.data).float()*confidence.data - (target_label != prediction.data).float()*confidence.data - norm_penalty
-        else:
-            reward = (ground_truth != prediction.data).float()*confidence.data - (ground_truth == prediction.data).float()*confidence.data - norm_penalty
-        return reward, {'label':ground_truth, 'prediction':prediction.data, 'confidence':confidence.data, 'norm':norm_penalty if self.norm is not None else None}
+    def _get_reward(self, obs, actio, **kwargs): raise NotImplementedError
 
-    def norm_on_batch(self, input, p):
-        # Assume dimension 0 is batch dimension
-        norm_penalty = input
-        while len(norm_penalty.size())>1:
-            norm_penalty = torch.norm(norm_penalty, p, -1)
-        return norm_penalty
+    def norm_on_batch(self, input, p): raise NotImplementedError
 
     def _check_model(self):
         return isinstance(self.target_model, nn.Module)
