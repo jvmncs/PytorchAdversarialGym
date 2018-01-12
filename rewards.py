@@ -4,23 +4,31 @@ import torch
 import torch.nn as nn
 from torch.autograd import Variable
 
-import random
 
-class Untargeted(gym.Wrapper):
-	def __init__(self, env, scale = 1.):
-		super(Untargeted, self).__init__(env)
+class RewardWrapper(gym.Wrapper):
+	def __init__(self, env, scale, out_function)
+		super(RewardWrapper, self).__init__(env)
 		self.reward_range = (-scale, scale)
+		self.out_function = out_function
 
-	def _get_reward(self, obs, action):
+	def _attack(self, action):
+		action = Variable(action, volatile = True)
+		outs = self.target_model(action)
+		return self.out_function(outs)
+
+
+class Untargeted(RewardWrapper):
+	def __init__(self, env, scale = 1., out_function = nn.functional.sigmoid):
+		super(Untargeted, self).__init__(env, scale, out_function)
+
+	def _get_reward(self, obs, action, **kwargs):
 		# Establish ground truth for image
 		ground_truth = obs[1]
 
 		# Attack target model
 		# TODO: Consider abstracting this and allowing it to be overridden,
 		# or at least allow for different output functions to be used
-		action = Variable(action, volatile = True)
-        outs = self.target_model(action)
-        outs = nn.functional.sigmoid(outs)
+		outs = self._attack(action)
 		confidence, prediction = torch.max(outs, 1)
 
 		# Determine norm penalty
@@ -41,14 +49,11 @@ class Untargeted(gym.Wrapper):
 		return reward, info
 
 
-class SingleTargeted(gym.Wrapper):
-	def __init__(self, env, target_class = 0, skip_target_class = True, scale = 1., norm = None):
-		super(SingleTargeted, self).__init__(env)
+class SingleTargeted(RewardWrapper):
+	def __init__(self, env, target_class = 0, skip_target_class = True, scale = 1., out_function = nn.functional.sigmoid):
+		super(SingleTargeted, self).__init__(env, scale, out_function)
 		self.target_class = target_class
 		self.skip_target_class = skip_target_class
-
-		self.reward_range = (-scale, scale)
-		self.norm = norm
 
 	def _step(self, action, **kwargs):
 		try:
@@ -76,7 +81,7 @@ class SingleTargeted(gym.Wrapper):
         reward, info = self._get_reward(current_obs, action, **kwargs)
         return self.successor, reward, self.done, info
 
-	def _get_reward(self, obs, action):
+	def _get_reward(self, obs, action, **kwargs):
 		# Establish ground truth for image
 		ground_truth = obs[1]
 
@@ -85,11 +90,7 @@ class SingleTargeted(gym.Wrapper):
 			assert ground_truth != self.target_class
 
 		# Attack target model
-		# TODO: Consider abstracting this and allowing it to be overridden,
-		# or at least allow for different output functions to be used
-		action = Variable(action, volatile = True)
-        outs = self.target_model(action)
-        outs = nn.functional.sigmoid(outs)
+		outs = self._attack(action)
 		confidence, prediction = torch.max(outs, 1)
 
 		# Determine norm penalty
@@ -125,27 +126,19 @@ class SingleTargeted(gym.Wrapper):
     	return collection
 
 
-class DynamicTargeted(gym.Wrapper):
-	def __init__(self, env, scale = 1., norm = None):
-		super(DynamicTargeted, self).__init__(env)
-		
-		self.reward_range = (-scale, scale)
-		self.norm = norm
+class DynamicTargeted(RewardWrapper):
+	def __init__(self, env, scale = 1., out_function = nn.functional.sigmoid):
+		super(DynamicTargeted, self).__init__(env, scale, out_function)
 
 	def _get_reward(self, obs, action, **kwargs):
 		# Establish ground truth for image
 		ground_truth = obs[1]
 
 		# Attack target model
-		# TODO: Consider abstracting this and allowing it to be overridden,
-		# or at least allow for different output functions to be used
-		action = Variable(action, volatile = True)
-        outs = self.target_model(action)
-        outs = nn.functional.sigmoid(outs)
+		outs = self._attack(action)
 		confidence, prediction = torch.max(outs, 1)
 
-		# Make sure target_class is in the right range
-		# Unpack target class
+		# Unpack target_class and make sure it's in the right range
 		try:
 			target_class = kwargs['target_class']
 			assert (type(target_class) is int) and (target_class >= 0) and (target_class <= outs.size(-1) - 1)
@@ -170,4 +163,3 @@ class DynamicTargeted(gym.Wrapper):
 			'norm':norm_penalty if self.norm is not None else None}
 
 		return reward, info
-

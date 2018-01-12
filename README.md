@@ -19,6 +19,7 @@ Roadmap:
 - [x] Extend to custom samplers to expose environment dynamics
 - [x] Extend for different reward functions
 - [x] Refactor to incorporate reward Wrappers
+- [x] Generalize confidence calculation to other activations
 - [ ] Implement strict argument for strict epsilon ball enforcement
 - [ ] Test reward Wrappers
 - [ ] Comment/document reward Wrappers

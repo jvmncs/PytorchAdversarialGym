@@ -90,6 +90,8 @@ class PytorchAdversarialEnv(gym.Env):
         reward, info = self._get_reward(current_obs, action, **kwargs)
         return self.successor, reward, self.done, info
 
+    def _get_reward(self, obs, action, **kwargs): raise NotImplementedError
+
     def _seed(self, seed):
         integer_types = (int,)
         if seed is not None and not (isinstance(seed, integer_types) and 0 <= seed):
@@ -108,8 +110,6 @@ class PytorchAdversarialEnv(gym.Env):
         self.done = False
         self.ix = 0
         return self.successor
-
-    def _get_reward(self, obs, action, **kwargs): raise NotImplementedError
 
     def norm_on_batch(self, input, p):
         # Assume dimension 0 is batch dimension
