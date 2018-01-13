@@ -21,9 +21,9 @@ Roadmap:
 - [x] Refactor to incorporate reward Wrappers
 - [x] Generalize confidence calculation to other activations
 - [x] Implement strict argument for strict epsilon ball enforcement
-- [ ] Test reward Wrappers
-- [ ] Comment/document reward Wrappers
-- [ ] Implement wrapper for changing image space (should just be a matter of readjusting TensorBox constructor)
+- [x] Test basic functionality of Untargeted and StaticTargeted wrappers
+- [ ] Test basic functionality of DynamicTargeted and DefendMode wrappers
+- [ ] Comment/document reward Wrappers (might need to do some more)
 - [ ] Test new features
 - [ ] Add [BadNets](https://arxiv.org/abs/1708.06733) functionality
 - [ ] Make UniformSampler memory-efficient

@@ -86,28 +86,8 @@ class AdvEnv(gym.Env):
         self._reset()
 
     def _step(self, action, **kwargs):
-        # Iterate until StopIteration 
-        # (either episode_length has been reached or DataLoader iterator is exhausted)
-        try:
-            current_obs = self.successor
-            self.successor = self.iterator.__next__()
-            self.ix += 1
-            if self.ix >= self.episode_length:
-                raise StopIteration
-        except StopIteration:
-            self.done = True
-
-        # CUDA conversion
-        if self.use_cuda:
-            action = action.cuda()
-            self.successor[0] = self.successor[0].cuda()
-            self.successor[1] = self.successor[1].cuda()
-        else:
-            action = action.cpu()
-
-        # Get reward and return results of environment transition
-        reward, info = self._get_reward(current_obs, action, **kwargs)
-        return self.successor, reward, self.done, info
+        # Overridden in RewardWrapper
+        raise NotImplementedError
 
     def _get_reward(self, obs, action, **kwargs):
         # Must be overridden by a subclass of RewardWrapper

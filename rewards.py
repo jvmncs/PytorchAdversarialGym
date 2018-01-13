@@ -3,6 +3,7 @@ import gym
 import torch
 import torch.nn as nn
 from torch.autograd import Variable
+from torch.utils.data import Dataset, DataLoader
 
 
 class RewardWrapper(gym.Wrapper):
@@ -16,11 +17,66 @@ class RewardWrapper(gym.Wrapper):
 		out_function (function): the final activation function to use for computing confidence
 			for each attack. If None, uses the identity function.
 	"""
-	def __init__(self, env, scale, out_function):
+	def __init__(self, env, scale, out_function, **kwargs):
 		super(RewardWrapper, self).__init__(env)
 		self.reward_range = (-scale, scale)
 		self.scale = scale
 		self.out_function = lambda x: x if out_function is None else out_function
+
+		self.use_cuda = self.unwrapped.use_cuda
+		self.Tensor = self.unwrapped.Tensor
+		self.LongTensor = self.unwrapped.LongTensor
+
+		self.target_model = self.unwrapped.target_model
+		self.dataset = self.unwrapped.dataset
+		self.norm = self.unwrapped.norm
+		self.strict_epsilon = self.unwrapped.strict_epsilon
+		self.action_space = self.unwrapped.action_space
+		self.observation_space = self.unwrapped.observation_space
+		self.episode_length = self.unwrapped.episode_length
+		self.sampler = self.unwrapped.sampler
+		self.torch_rng = self.unwrapped.torch_rng
+		self.batch_size = self.unwrapped.batch_size
+		self.num_workers = self.unwrapped.num_workers
+		self.data_loader = self.unwrapped.data_loader
+		self.iterator = iter(self.data_loader)
+
+	def _step(self, action, **kwargs):
+		# Iterate until StopIteration 
+		# (either episode_length has been reached or DataLoader iterator is exhausted)
+		try:
+			current_obs = self.successor
+			self.successor = self.iterator.__next__()
+			self.unwrapped.ix += 1
+			if self.unwrapped.ix >= self.episode_length:
+				raise StopIteration
+		except StopIteration:
+			self.unwrapped.done = True
+
+		# CUDA conversion
+		if self.use_cuda:
+			action = action.cuda()
+			self.successor[0] = self.successor[0].cuda()
+			self.successor[1] = self.successor[1].cuda()
+		else:
+			action = action.cpu()
+
+		# Get reward and return results of environment transition
+		reward, info = self._get_reward(current_obs, action, **kwargs)
+		return self.successor, reward, self.unwrapped.done, info
+
+	def _get_reward(self, obs, action, **kwargs):
+		# Must be overridden by a subclass
+		raise NotImplementedError
+
+	def _seed(self, seed):
+		return self.unwrapped._seed(seed)
+
+	def _reset(self):
+		return self.unwrapped._reset()
+
+	def norm_on_batch(self, input, p):
+		return self.unwrapped.norm_on_batch(input, p)
 
 	def _attack(self, action):
 		action = Variable(action, volatile = True)
@@ -49,6 +105,7 @@ class Untargeted(RewardWrapper):
 	"""
 	def __init__(self, env, scale = 1., out_function = nn.functional.sigmoid):
 		super(Untargeted, self).__init__(env, scale, out_function)
+		self.out_function = self.env.out_function if out_function is None else out_function
 
 	def _get_reward(self, obs, action, **kwargs):
 		# Establish ground truth for image
@@ -65,7 +122,7 @@ class Untargeted(RewardWrapper):
 			norm_penalty = 0
 
 		# Compute reward, gather info
-		if self._check_norm_validity() and self._strict(norm_penalty):
+		if self.unwrapped._check_norm_validity() and self._strict(norm_penalty):
 			reward = ((ground_truth != prediction.data).float() * confidence.data
 				- (ground_truth == prediction.data).float() * confidence.data
 				- norm_penalty)
@@ -99,6 +156,7 @@ class StaticTargeted(RewardWrapper):
 		super(StaticTargeted, self).__init__(env, scale, out_function)
 		self.target_class = target_class
 		self.skip_target_class = skip_target_class
+		self.out_function = self.env.out_function if out_function is None else out_function
 
 	def _step(self, action, **kwargs):
 		# Same as base _step method, but allows skipping images belonging to the target class
@@ -109,7 +167,9 @@ class StaticTargeted(RewardWrapper):
 				while (self.successor[1] == self.target_class).any():
 					newly_sampled = self._sample_for_skip((self.successor[1] == self.target_class).sum())
 					target_mask = (self.successor[1] == self.target_class)
-					self.successor[0][target_mask] = newly_sampled[0]
+					expanded_mask = target_mask.view(-1, *[1]*(len(self.successor[0].size())-1))
+					expanded_mask = target_mask.expand_as(self.successor[0])
+					self.successor[0][expanded_mask] = newly_sampled[0]
 					self.successor[1][target_mask] = newly_sampled[1]
 			else:
 				self.successor = self.iterator.__next__()
@@ -117,7 +177,7 @@ class StaticTargeted(RewardWrapper):
 			if self.ix >= self.episode_length:
 				raise StopIteration
 		except StopIteration:
-			self.done = True
+			self.unwrapped.done = True
 		if self.use_cuda:
 			action = action.cuda()
 			self.successor[0] = self.successor[0].cuda()
@@ -125,7 +185,7 @@ class StaticTargeted(RewardWrapper):
 		else:
 			action = action.cpu()
 		reward, info = self._get_reward(current_obs, action, **kwargs)
-		return self.successor, reward, self.done, info
+		return self.successor, reward, self.unwrapped.done, info
 
 	def _get_reward(self, obs, action, **kwargs):
 		# Establish ground truth for image
@@ -133,7 +193,7 @@ class StaticTargeted(RewardWrapper):
 
 		# Just here for testing -- TODO: Remove
 		if self.skip_target_class:
-			assert ground_truth != self.target_class
+			assert (ground_truth != self.target_class).all()
 
 		# Attack target model
 		outs = self._attack(action)
@@ -146,7 +206,7 @@ class StaticTargeted(RewardWrapper):
 			norm_penalty = 0
 
 		# Compute reward, gather info
-		if self._check_norm_validity() and self._strict(norm_penalty):
+		if self.unwrapped._check_norm_validity() and self._strict(norm_penalty):
 			reward = ((self.target_class == prediction.data).float() * confidence.data
 				- (self.target_class != prediction.data).float() * confidence.data
 				- norm_penalty)
@@ -161,14 +221,35 @@ class StaticTargeted(RewardWrapper):
 
 		return reward, info
 
+	def _reset(self):
+		if self.skip_target_class:
+			self.data_loader = DataLoader(self.dataset, batch_size = self.batch_size, sampler = self.sampler, num_workers = self.num_workers)
+			self.iterator = iter(self.data_loader)
+			self.successor = self.iterator.__next__()
+			while (self.successor[1] == self.target_class).any():
+				newly_sampled = self._sample_for_skip((self.successor[1] == self.target_class).sum())
+				target_mask = (self.successor[1] == self.target_class)
+				expanded_mask = target_mask.view(-1, *[1]*(len(self.successor[0].size())-1))
+				expanded_mask = target_mask.expand_as(self.successor[0])
+				self.successor[0][expanded_mask] = newly_sampled[0]
+				self.successor[1][target_mask] = newly_sampled[1]
+			if self.use_cuda:
+				self.successor[0] = self.successor[0].cuda()
+				self.successor[1] = self.successor[1].cuda()
+			self.unwrapped.done = False
+			self.ix = 0
+			return self.successor
+		else:
+			return self.unwrapped._reset()
+
 	def _sample_for_skip(self, batch_size):
 		# Sample from dataset -- necessary so we don't mess up the index of the DataLoader
-		collection = [self.dataset[int(self.Tensor(1).random_(0,len(self.dataset), generator = self.torch_rng)[0])] for x in range(batch_size)]
+		collection = [self.dataset[int(self.Tensor(1).cpu().random_(0, len(self.dataset), generator = self.torch_rng)[0])] for x in range(batch_size)]
 
 		# Collect batch into tensor
-		collection = tuple(zip(*collection))
+		collection = list(zip(*collection))
 		collection[0] = torch.cat(map(lambda x: torch.unsqueeze(x, 0), collection[0]))
-		collection[1] = self.LongTensor(collected[1])
+		collection[1] = torch.LongTensor(collection[1])
 
 		return collection
 
@@ -249,7 +330,7 @@ class DefendMode(RewardWrapper):
 			norm_penalty = 0
 
 		# Compute reward, gather info
-		if self._check_norm_validity() and self._strict(norm_penalty):
+		if self.unwrapped._check_norm_validity() and self._strict(norm_penalty):
 			reward = ((ground_truth == prediction.data).float() * confidence.data
 				- (ground_truth != prediction.data).float() * confidence.data
 				- norm_penalty)
