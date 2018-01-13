@@ -20,7 +20,7 @@ Roadmap:
 - [x] Extend for different reward functions
 - [x] Refactor to incorporate reward Wrappers
 - [x] Generalize confidence calculation to other activations
-- [ ] Implement strict argument for strict epsilon ball enforcement
+- [x] Implement strict argument for strict epsilon ball enforcement
 - [ ] Test reward Wrappers
 - [ ] Comment/document reward Wrappers
 - [ ] Implement wrapper for changing image space (should just be a matter of readjusting TensorBox constructor)

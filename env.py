@@ -6,11 +6,13 @@ from torch.autograd import Variable
 from torch.utils.data import Dataset, DataLoader
 from torch.utils.data.sampler import Sampler
 
-from .space import TensorBox
-from .util import UniformSampler
+import warnings
+
+from space import TensorBox
+from util import UniformSampler
 
 
-class PytorchAdversarialEnv(gym.Env):
+class AdvEnv(gym.Env):
     """
     An environment for generating and defending against adversarial examples with PyTorch models
         and Datasets.
@@ -23,6 +25,9 @@ class PytorchAdversarialEnv(gym.Env):
             Note: ToTensor transform must be included.
         norm (float, optional): P value of L-p norm to use for contrained penalty on reward.
             Only called in reward wrappers. If None, no norm penalty is taken.
+        strict_epsilon (float, optional): If not None, attacks outside of an epsilon ball around
+            the original image receive some predefined reward specified by the reward wrapper.
+            By default, this predefined reward is the minimum possible reward.
         batch_size (int, optional): Number of instances for the target_model to classify per step.
         episode_length (positive integer, optional): Specifies the number of steps to include in
             each episode.  Default is len(dataset)//batch_size.
@@ -37,19 +42,26 @@ class PytorchAdversarialEnv(gym.Env):
             For this reason, we disable CUDNN if a seed is specified.
 
     """
-    def __init__(self, target_model, dataset, norm = None, batch_size = 1, episode_length = None,
-            sampler = None, num_workers = 0, use_cuda = torch.cuda.is_available(), seed = None):
-        super(PytorchAdversarialEnv).__init__()
+    def __init__(self, target_model, dataset, norm = None, strict_epsilon = None, batch_size = 1,
+            episode_length = None, sampler = None, num_workers = 0,
+            use_cuda = torch.cuda.is_available(), seed = None):
+        super(AdvEnv).__init__()
+        # Set up tensor types
         self.use_cuda = use_cuda
+        self.Tensor = torch.cuda.FloatTensor if self.use_cuda else torch.FloatTensor
+        self.LongTensor = torch.cuda.LongTensor if self.use_cuda else torch.LongTensor
+
         if seed is not None:
             torch.backend.cudnn.enabled = False
         self.seedey = self._seed(seed)
         self.target_model = target_model.cuda() if use_cuda else target_model.cpu()
         self.dataset = dataset
+        self.norm = norm
+        self.strict_epsilon = strict_epsilon
         space_shape = self.dataset[0][0].size()
         space_shape = (batch_size, *space_shape[1:])
-        self.action_space = TensorBox(0, 1, space_shape)
-        self.observation_space = TensorBox(0, 1, space_shape)
+        self.action_space = TensorBox(0, 1, space_shape, self.use_cuda)
+        self.observation_space = TensorBox(0, 1, space_shape, self.use_cuda)
         self.episode_length = len(self.dataset)//batch_size if not episode_length else episode_length
         self.sampler = UniformSampler(self.dataset, self.torch_rng, len(self.dataset)) if not sampler else sampler
 
@@ -64,15 +76,18 @@ class PytorchAdversarialEnv(gym.Env):
         if not self._check_sampler():
             raise gym.error.Error('Sampler type {} not supported.'.format(type(self.sampler)) +
                                'Currently, sampler must be a subclass of torch.utils.data.sampler.Sampler.')
+        if not self._check_norm_validity():
+            warnings.warn('Argument strict_epsilon is meaningless when \'norm\' is None.')
 
         self.batch_size = batch_size
-        self.norm = norm
         self.num_workers = num_workers
         self.data_loader = DataLoader(self.dataset, batch_size = self.batch_size, sampler = self.sampler, num_workers = self.num_workers)
         self.iterator = iter(self.data_loader)
         self._reset()
 
     def _step(self, action, **kwargs):
+        # Iterate until StopIteration 
+        # (either episode_length has been reached or DataLoader iterator is exhausted)
         try:
             current_obs = self.successor
             self.successor = self.iterator.__next__()
@@ -81,16 +96,22 @@ class PytorchAdversarialEnv(gym.Env):
                 raise StopIteration
         except StopIteration:
             self.done = True
+
+        # CUDA conversion
         if self.use_cuda:
             action = action.cuda()
             self.successor[0] = self.successor[0].cuda()
             self.successor[1] = self.successor[1].cuda()
         else:
             action = action.cpu()
+
+        # Get reward and return results of environment transition
         reward, info = self._get_reward(current_obs, action, **kwargs)
         return self.successor, reward, self.done, info
 
-    def _get_reward(self, obs, action, **kwargs): raise NotImplementedError
+    def _get_reward(self, obs, action, **kwargs):
+        # Must be overridden by a subclass of RewardWrapper
+        raise NotImplementedError
 
     def _seed(self, seed):
         integer_types = (int,)
@@ -122,7 +143,10 @@ class PytorchAdversarialEnv(gym.Env):
         return isinstance(self.target_model, nn.Module)
 
     def _check_dataset(self):
-        return isinstance(self.dataset, Dataset) and (isinstance(self.dataset[0][0], torch.FloatTensor) or isinstance(self.dataset[0][0], torch.cuda.FloatTensor))
+        return isinstance(self.dataset, Dataset) and (isinstance(self.dataset[0][0], torch.Tensor))
 
     def _check_sampler(self):
         return isinstance(self.sampler, Sampler)
+
+    def _check_norm_validity(self):
+        return self.norm is not None or self.strict_epsilon is None

@@ -11,21 +11,22 @@ class TensorBox(gym.Space):
         high (float or int):
         shape (torch.Size or subclass of tuple):
     """
-    def __init__(self, low, high, shape):
+    def __init__(self, low, high, shape, use_cuda):
         super().__init__()
         assert isinstance(low, (int, float)) and isinstance(high, (int, float)) and isinstance(shape, tuple)
         self.low = low
         self.high = high
         self.shape = shape
+        self.Tensor = torch.cuda.FloatTensor if use_cuda else torch.FloatTensor
 
     def sample(self):
-        return torch.Tensor(*self.shape).uniform_(self.low, self.high).unsqueeze(0)
+        return Tensor(*self.shape).uniform_(self.low, self.high).unsqueeze(0)
 
     def contains(self, x):
-        return x.size() == (1, *self.shape) and (x >= self.low).all() and (x <= self.high).all()
+        return (x.size()[1:] == self.shape) and (x >= self.low).all() and (x <= self.high).all()
 
     def to_jsonable(self, sample_n):
-        tensor_bool = isinstance(sample_n, torch.Tensor)
+        tensor_bool = isinstance(sample_n, Tensor)
         seq_bool = issubclass(sample_n, tuple) or issubclass(sample_n, list)
         assert tensor_bool or seq_bool
         if tensor_bool:
@@ -37,4 +38,4 @@ class TensorBox(gym.Space):
             return torch.cat([x.unsqueeze(0) for x in sample_n]).tolist()
 
     def from_jsonable(self, sample_n):
-        return torch.Tensor(sample_n)
+        return Tensor(sample_n)
