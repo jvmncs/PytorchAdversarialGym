@@ -7,8 +7,6 @@ from torch.utils.data import Dataset, DataLoader
 from torch.utils.data.sampler import Sampler
 
 import warnings
-import functools
-import operator
 
 from space import TensorBox
 from util import UniformSampler
