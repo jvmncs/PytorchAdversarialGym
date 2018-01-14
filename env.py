@@ -7,126 +7,128 @@ from torch.utils.data import Dataset, DataLoader
 from torch.utils.data.sampler import Sampler
 
 import warnings
+import functools
+import operator
 
 from space import TensorBox
 from util import UniformSampler
 
 
 class AdvEnv(gym.Env):
-    """
-    An environment for generating and defending against adversarial examples with PyTorch models
-        and Datasets.
+	"""
+	An environment for generating and defending against adversarial examples with PyTorch models
+		and Datasets.
 
-    Args:
-        target_model (subclass of torch.nn.Module): The model we're attacking.
-            Currently, only torch.nn.Module is supported.
-        dataset (subclass of torch.utils.data.Dataset): The dataset we're using to attack.
-            Currently, only Pytorch Dataset objects are supported.
-            Note: ToTensor transform must be included.
-        norm (float, optional): P value of L-p norm to use for contrained penalty on reward.
-            Only called in reward wrappers. If None, no norm penalty is taken.
-        strict_epsilon (float, optional): If not None, attacks outside of an epsilon ball around
-            the original image receive some predefined reward specified by the reward wrapper.
-            By default, this predefined reward is the minimum possible reward.
-        batch_size (int, optional): Number of instances for the target_model to classify per step.
-        episode_length (positive integer, optional): Specifies the number of steps to include in
-            each episode.  Default is len(dataset)//batch_size.
-        sampler (subclass of torch.utils.data.Sampler, optional): Specifies the sampling strategy.
-            Default is uniform random sampling with replacement over the entire dataset.
-        num_workers (integer, optional): Argument to be passed to DataLoader specifying number of
-            subprocess threads to use for data loading.
-        use_cuda: (bool, optional): Whether to place tensors and model on GPU.
-            Defaults to True if GPU is available.
-        seed: (int, optional): integer to use for random seed.  If None, use default Pytorch RNG.
-            Note: setting a seed does not guarantee determinism when using CUDNN backend.
-            For this reason, we disable CUDNN if a seed is specified.
+	Args:
+		target_model (subclass of torch.nn.Module): The model we're attacking.
+			Currently, only torch.nn.Module is supported.
+		dataset (subclass of torch.utils.data.Dataset): The dataset we're using to attack.
+			Currently, only Pytorch Dataset objects are supported.
+			Note: ToTensor transform must be included.
+		norm (float, optional): P value of L-p norm to use for contrained penalty on reward.
+			Only called in reward wrappers. If None, no norm penalty is taken.
+		strict_epsilon (float, optional): If not None, attacks outside of an epsilon ball around
+			the original image receive some predefined reward specified by the reward wrapper.
+			By default, this predefined reward is the minimum possible reward.
+		batch_size (int, optional): Number of instances for the target_model to classify per step.
+		episode_length (positive integer, optional): Specifies the number of steps to include in
+			each episode.  Default is len(dataset)//batch_size.
+		sampler (subclass of torch.utils.data.Sampler, optional): Specifies the sampling strategy.
+			Default is uniform random sampling with replacement over the entire dataset.
+		num_workers (integer, optional): Argument to be passed to DataLoader specifying number of
+			subprocess threads to use for data loading.
+		use_cuda: (bool, optional): Whether to place tensors and model on GPU.
+			Defaults to True if GPU is available.
+		seed: (int, optional): integer to use for random seed.  If None, use default Pytorch RNG.
+			Note: setting a seed does not guarantee determinism when using CUDNN backend.
+			For this reason, we disable CUDNN if a seed is specified.
 
-    """
-    def __init__(self, target_model, dataset, norm = None, strict_epsilon = None, batch_size = 1,
-            episode_length = None, sampler = None, num_workers = 0,
-            use_cuda = torch.cuda.is_available(), seed = None):
-        super(AdvEnv).__init__()
-        # Set up tensor types
-        self.use_cuda = use_cuda
-        self.Tensor = torch.cuda.FloatTensor if self.use_cuda else torch.FloatTensor
-        self.LongTensor = torch.cuda.LongTensor if self.use_cuda else torch.LongTensor
+	"""
+	def __init__(self, target_model, dataset, norm = None, strict_epsilon = None, batch_size = 1,
+			episode_length = None, sampler = None, num_workers = 0,
+			use_cuda = torch.cuda.is_available(), seed = None):
+		super(AdvEnv).__init__()
+		# Set up tensor types
+		self.use_cuda = use_cuda
+		self.Tensor = torch.cuda.FloatTensor if self.use_cuda else torch.FloatTensor
+		self.LongTensor = torch.cuda.LongTensor if self.use_cuda else torch.LongTensor
 
-        if seed is not None:
-            torch.backend.cudnn.enabled = False
-        self.seedey = self._seed(seed)
-        self.target_model = target_model.cuda() if use_cuda else target_model.cpu()
-        self.dataset = dataset
-        self.norm = norm
-        self.strict_epsilon = strict_epsilon
-        space_shape = self.dataset[0][0].size()
-        space_shape = (batch_size, *space_shape[1:])
-        self.action_space = TensorBox(0, 1, space_shape, self.use_cuda)
-        self.observation_space = TensorBox(0, 1, space_shape, self.use_cuda)
-        self.episode_length = len(self.dataset)//batch_size if not episode_length else episode_length
-        self.sampler = UniformSampler(self.dataset, self.torch_rng, len(self.dataset)) if not sampler else sampler
+		if seed is not None:
+			torch.backend.cudnn.enabled = False
+		self.seedey = self._seed(seed)
+		self.target_model = target_model.cuda() if use_cuda else target_model.cpu()
+		self.dataset = dataset
+		self.norm = norm
+		self.strict_epsilon = strict_epsilon
+		space_shape = self.dataset[0][0].size()
+		space_shape = (batch_size, *space_shape[1:])
+		self.action_space = TensorBox(0, 1, space_shape, self.use_cuda)
+		self.observation_space = TensorBox(0, 1, space_shape, self.use_cuda)
+		self.episode_length = len(self.dataset)//batch_size if not episode_length else episode_length
+		self.sampler = UniformSampler(self.dataset, self.torch_rng, len(self.dataset)) if not sampler else sampler
 
-        if not self._check_dataset():
-            raise gym.error.Error('Dataset type {} not supported.'.format(type(self.dataset)) +
-                              'Currently, dataset must be a subclass of torch.utils.data.Dataset containing FloatTensors')
+		if not self._check_dataset():
+			raise gym.error.Error('Dataset type {} not supported.'.format(type(self.dataset)) +
+							  'Currently, dataset must be a subclass of torch.utils.data.Dataset containing FloatTensors')
 
-        if not self._check_model():
-            raise gym.error.Error('Model type {} not supported.'.format(type(self.target_model)) +
-                              ' Currently, target_model must be a subclass of torch.nn.Module.')
+		if not self._check_model():
+			raise gym.error.Error('Model type {} not supported.'.format(type(self.target_model)) +
+							  ' Currently, target_model must be a subclass of torch.nn.Module.')
 
-        if not self._check_sampler():
-            raise gym.error.Error('Sampler type {} not supported.'.format(type(self.sampler)) +
-                               'Currently, sampler must be a subclass of torch.utils.data.sampler.Sampler.')
-        if not self._check_norm_validity():
-            warnings.warn('Argument strict_epsilon is meaningless when \'norm\' is None.')
+		if not self._check_sampler():
+			raise gym.error.Error('Sampler type {} not supported.'.format(type(self.sampler)) +
+							   'Currently, sampler must be a subclass of torch.utils.data.sampler.Sampler.')
+		if not self._check_norm_validity():
+			warnings.warn('Argument strict_epsilon is meaningless when \'norm\' is None.')
 
-        self.batch_size = batch_size
-        self.num_workers = num_workers
-        self.data_loader = DataLoader(self.dataset, batch_size = self.batch_size, sampler = self.sampler, num_workers = self.num_workers)
-        self.iterator = iter(self.data_loader)
-        self._reset()
+		self.batch_size = batch_size
+		self.num_workers = num_workers
+		self.data_loader = DataLoader(self.dataset, batch_size = self.batch_size, sampler = self.sampler, num_workers = self.num_workers)
+		self.iterator = iter(self.data_loader)
+		self._reset()
 
-    def _step(self, action, **kwargs):
-        # Overridden in RewardWrapper
-        raise NotImplementedError
+	def _step(self, action, **kwargs):
+		# Overridden in RewardWrapper
+		raise NotImplementedError
 
-    def _get_reward(self, obs, action, **kwargs):
-        # Must be overridden by a subclass of RewardWrapper
-        raise NotImplementedError
+	def _get_reward(self, obs, action, **kwargs):
+		# Must be overridden by a subclass of RewardWrapper
+		raise NotImplementedError
 
-    def _seed(self, seed):
-        integer_types = (int,)
-        if seed is not None and not (isinstance(seed, integer_types) and 0 <= seed):
-            raise gym.error.Error('Seed must be a non-negative integer or omitted, not {}.'.format(type(seed)))
-        self.torch_rng = torch.manual_seed(seed) if seed is not None else torch.default_generator
-        self.seedey = seed
-        return [seed]
+	def _seed(self, seed):
+		integer_types = (int,)
+		if seed is not None and not (isinstance(seed, integer_types) and 0 <= seed):
+			raise gym.error.Error('Seed must be a non-negative integer or omitted, not {}.'.format(type(seed)))
+		self.torch_rng = torch.manual_seed(seed) if seed is not None else torch.default_generator
+		self.seedey = seed
+		return [seed]
 
-    def _reset(self):
-        self.data_loader = DataLoader(self.dataset, batch_size = self.batch_size, sampler = self.sampler, num_workers = self.num_workers)
-        self.iterator = iter(self.data_loader)
-        self.successor = self.iterator.__next__()
-        if self.use_cuda:
-            self.successor[0] = self.successor[0].cuda()
-            self.successor[1] = self.successor[1].cuda()
-        self.done = False
-        self.ix = 0
-        return self.successor
+	def _reset(self):
+		self.data_loader = DataLoader(self.dataset, batch_size = self.batch_size, sampler = self.sampler, num_workers = self.num_workers)
+		self.iterator = iter(self.data_loader)
+		self.successor = self.iterator.__next__()
+		if self.use_cuda:
+			self.successor[0] = self.successor[0].cuda()
+			self.successor[1] = self.successor[1].cuda()
+		self.done = False
+		self.ix = 0
+		return self.successor
 
-    def norm_on_batch(self, input, p):
-        # Assume dimension 0 is batch dimension
-        norm_penalty = input
-        while len(norm_penalty.size())>1:
-            norm_penalty = torch.norm(norm_penalty, p, -1)
-        return norm_penalty
+	def norm_on_batch(self, input, p):
+		# Assume dimension 0 is batch dimension
+		norm_penalty = input
+		while len(norm_penalty.size())>1:
+			norm_penalty = torch.norm(norm_penalty, p, -1)
+		return norm_penalty
 
-    def _check_model(self):
-        return isinstance(self.target_model, nn.Module)
+	def _check_model(self):
+		return isinstance(self.target_model, nn.Module)
 
-    def _check_dataset(self):
-        return isinstance(self.dataset, Dataset) and (isinstance(self.dataset[0][0], torch.Tensor))
+	def _check_dataset(self):
+		return isinstance(self.dataset, Dataset) and (isinstance(self.dataset[0][0], torch.Tensor))
 
-    def _check_sampler(self):
-        return isinstance(self.sampler, Sampler)
+	def _check_sampler(self):
+		return isinstance(self.sampler, Sampler)
 
-    def _check_norm_validity(self):
-        return self.norm is not None or self.strict_epsilon is None
+	def _check_norm_validity(self):
+		return self.norm is not None or self.strict_epsilon is None

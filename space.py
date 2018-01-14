@@ -20,13 +20,13 @@ class TensorBox(gym.Space):
         self.Tensor = torch.cuda.FloatTensor if use_cuda else torch.FloatTensor
 
     def sample(self):
-        return Tensor(*self.shape).uniform_(self.low, self.high).unsqueeze(0)
+        return self.Tensor(*self.shape).uniform_(self.low, self.high).unsqueeze(0)
 
     def contains(self, x):
         return (x.size()[1:] == self.shape) and (x >= self.low).all() and (x <= self.high).all()
 
     def to_jsonable(self, sample_n):
-        tensor_bool = isinstance(sample_n, Tensor)
+        tensor_bool = isinstance(sample_n, self.Tensor)
         seq_bool = issubclass(sample_n, tuple) or issubclass(sample_n, list)
         assert tensor_bool or seq_bool
         if tensor_bool:
@@ -38,4 +38,4 @@ class TensorBox(gym.Space):
             return torch.cat([x.unsqueeze(0) for x in sample_n]).tolist()
 
     def from_jsonable(self, sample_n):
-        return Tensor(sample_n)
+        return self.Tensor(sample_n)

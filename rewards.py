@@ -40,6 +40,7 @@ class RewardWrapper(gym.Wrapper):
 		self.num_workers = self.unwrapped.num_workers
 		self.data_loader = self.unwrapped.data_loader
 		self.iterator = iter(self.data_loader)
+		self.successor = self.unwrapped.successor
 
 	def _step(self, action, **kwargs):
 		# Iterate until StopIteration 
@@ -64,6 +65,10 @@ class RewardWrapper(gym.Wrapper):
 		# Get reward and return results of environment transition
 		reward, info = self._get_reward(current_obs, action, **kwargs)
 		return self.successor, reward, self.unwrapped.done, info
+
+	
+	def step(self, action, **kwargs):
+		return self._step(action, **kwargs)
 
 	def _get_reward(self, obs, action, **kwargs):
 		# Must be overridden by a subclass
@@ -117,7 +122,7 @@ class Untargeted(RewardWrapper):
 
 		# Determine norm penalty
 		if self.norm is not None:
-			norm_penalty = self.norm_on_batch(action.data - obs[0], self.norm)
+			norm_penalty = self.norm_on_batch(action - obs[0], self.norm)
 		else:
 			norm_penalty = 0
 
@@ -201,7 +206,7 @@ class StaticTargeted(RewardWrapper):
 
 		# Determine norm penalty
 		if self.norm is not None:
-			norm_penalty = self.norm_on_batch(action.data - obs[0], self.norm)
+			norm_penalty = self.norm_on_batch(action - obs[0], self.norm)
 		else:
 			norm_penalty = 0
 
@@ -274,6 +279,7 @@ class DynamicTargeted(RewardWrapper):
 	"""
 	def __init__(self, env, scale = 1., out_function = nn.functional.sigmoid):
 		super(DynamicTargeted, self).__init__(env, scale, out_function)
+		self.out_function = self.env.out_function if out_function is None else out_function
 
 	def _get_reward(self, obs, action, **kwargs):
 		# Establish ground truth for image
@@ -281,20 +287,26 @@ class DynamicTargeted(RewardWrapper):
 
 		# Attack target model
 		outs = self._attack(action)
-		confidence, prediction = torch.max(outs, 1)
+		confidence, prediction = torch.max(outs, -1)
 
 		# Unpack target_class and make sure it's in the right range
 		try:
 			target_class = kwargs['target_class']
-			assert isinstance(target_class, self.LongTensor) and (target_class >= 0).all() and (target_class <= outs.size(-1) - 1).all()
+			if not isinstance(target_class, self.LongTensor):
+				target_class = target_class.type_as(self.LongTensor())
+			assert (target_class.size(0) == outs.size(0)) and (target_class >= 0).all() and (target_class <= outs.size(-1) - 1).all()
 		except KeyError:
 			raise gym.error.Error('DynamicTargeted wrapper requires keyword argument \'target_class\' for each call of \'step\'.')
+		except AttributeError:
+			raise gym.error.Error('The target_class must be a tensor.')
 		except AssertionError:
-			raise gym.error.Error('Keyword argument \'target_class\' must be within range of model.')
+			if target_class.size(0) != outs.size(0):
+				raise gym.error.Error('The target_class must be of length batch_size.')
+			raise gym.error.Error('Elements of target_class must be within range of model.')
 
 		# Determine norm penalty
 		if self.norm is not None:
-			norm_penalty = self.norm_on_batch(action.data - obs[0], self.norm)
+			norm_penalty = self.norm_on_batch(action - obs[0], self.norm)
 		else:
 			norm_penalty = 0
 
@@ -325,7 +337,7 @@ class DefendMode(RewardWrapper):
 
 		# Determine norm penalty
 		if self.norm is not None:
-			norm_penalty = self.norm_on_batch(action.data - obs[0], self.norm)
+			norm_penalty = self.norm_on_batch(action - obs[0], self.norm)
 		else:
 			norm_penalty = 0
 
