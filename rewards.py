@@ -6,6 +6,7 @@ from torch.autograd import Variable
 from torch.utils.data import Dataset, DataLoader
 
 
+
 class RewardWrapper(gym.Wrapper):
 	"""
 	Base class for reward wrappers.
@@ -30,6 +31,9 @@ class RewardWrapper(gym.Wrapper):
 		self.reward_range = (-scale, scale)
 		self.scale = scale
 		self.out_function = lambda x: x if out_function is None else out_function
+		self.norm = norm
+		self.strict_epsilon = strict_epsilon
+		self.beta = beta
 
 		self.use_cuda = self.unwrapped.use_cuda
 		self.Tensor = self.unwrapped.Tensor
@@ -37,8 +41,6 @@ class RewardWrapper(gym.Wrapper):
 
 		self.target_model = self.unwrapped.target_model
 		self.dataset = self.unwrapped.dataset
-		self.norm = norm
-		self.strict_epsilon = strict_epsilon
 		self.action_space = self.unwrapped.action_space
 		self.observation_space = self.unwrapped.observation_space
 		self.episode_length = self.unwrapped.episode_length
@@ -79,7 +81,6 @@ class RewardWrapper(gym.Wrapper):
 		return self._step(action, **kwargs)
 
 	def _get_reward(self, obs, action, **kwargs):
-		# Must be overridden by a subclass
 		raise NotImplementedError
 
 	def _seed(self, seed):
@@ -88,13 +89,20 @@ class RewardWrapper(gym.Wrapper):
 	def _reset(self):
 		return self.unwrapped._reset()
 
-	def norm_on_batch(self, input, p):
-		return self.unwrapped.norm_on_batch(input, p)
-
 	def _attack(self, action):
 		action = Variable(action, volatile = True)
 		outs = self.target_model(action)
 		return self.out_function(outs)
+
+	def norm_on_batch(self, input, p):
+		return self.unwrapped.norm_on_batch(input, p)
+
+	def _compute_norm_penalty(self, action, observation):
+		if self.norm is not None:
+			norm_penalty = self.norm_on_batch(action - obs[0], self.norm)
+			norm_penalty *= self.beta
+			return norm_penalty
+		return 0
 
 	def _strict(self, norm_penalty):
 		if self.strict_epsilon:
@@ -102,11 +110,12 @@ class RewardWrapper(gym.Wrapper):
 		else:
 			return True
 
-	def  _failed_strict(self,**kwargs):
-		return min(reward_range)
-
 	def _check_norm_validity(self):
 		return self.norm is not None or self.strict_epsilon is None
+
+	def _failed_strict(self,**kwargs):
+		return min(reward_range)
+
 
 
 class Untargeted(RewardWrapper):
@@ -119,8 +128,8 @@ class Untargeted(RewardWrapper):
 		out_function (function, default: nn.functional.sigmoid): the final activation function to use for computing confidence
 			for each attack. If None, uses the identity function.
 	"""
-	def __init__(self, env, scale = 1., out_function = nn.functional.sigmoid):
-		super(Untargeted, self).__init__(env, scale, out_function)
+	def __init__(self, env, scale = 1., norm = None, strict_epsilon = None, beta = .01, out_function = nn.functional.sigmoid):
+		super(Untargeted, self).__init__(env, scale, out_function, norm, strict_epsilon, beta)
 		self.out_function = self.env.out_function if out_function is None else out_function
 
 	def _get_reward(self, obs, action, **kwargs):
@@ -132,10 +141,7 @@ class Untargeted(RewardWrapper):
 		confidence, prediction = torch.max(outs, 1)
 
 		# Determine norm penalty
-		if self.norm is not None:
-			norm_penalty = self.norm_on_batch(action - obs[0], self.norm)
-		else:
-			norm_penalty = 0
+		norm_penalty = self._compute_norm_penalty(action, obs[0])
 
 		# Compute reward, gather info
 		if self.unwrapped._check_norm_validity() and self._strict(norm_penalty):
@@ -150,6 +156,7 @@ class Untargeted(RewardWrapper):
 			'norm':norm_penalty if self.norm is not None else None}
 
 		return reward, info
+
 
 
 class StaticTargeted(RewardWrapper):
@@ -168,8 +175,8 @@ class StaticTargeted(RewardWrapper):
 			for each attack. If None, uses the identity function.
 
 	"""
-	def __init__(self, env, target_class, skip_target_class = True, scale = 1., out_function = nn.functional.sigmoid):
-		super(StaticTargeted, self).__init__(env, scale, out_function)
+	def __init__(self, env, target_class, skip_target_class = True, scale = 1., norm = None, strict_epsilon = None, beta = .01, out_function = nn.functional.sigmoid):
+		super(StaticTargeted, self).__init__(env, scale, out_function, norm, strict_epsilon, beta)
 		self.target_class = target_class
 		self.skip_target_class = skip_target_class
 		self.out_function = self.env.out_function if out_function is None else out_function
@@ -216,10 +223,7 @@ class StaticTargeted(RewardWrapper):
 		confidence, prediction = torch.max(outs, 1)
 
 		# Determine norm penalty
-		if self.norm is not None:
-			norm_penalty = self.norm_on_batch(action - obs[0], self.norm)
-		else:
-			norm_penalty = 0
+		norm_penalty = self._compute_norm_penalty(action, obs[0])
 
 		# Compute reward, gather info
 		if self.unwrapped._check_norm_validity() and self._strict(norm_penalty):
@@ -270,6 +274,7 @@ class StaticTargeted(RewardWrapper):
 		return collection
 
 
+
 class DynamicTargeted(RewardWrapper):
 	"""
 	Reward computed for targeted attack, but this allows the user to specify which class they want
@@ -288,8 +293,8 @@ class DynamicTargeted(RewardWrapper):
 			for each attack. If None, uses the identity function.
 
 	"""
-	def __init__(self, env, scale = 1., out_function = nn.functional.sigmoid):
-		super(DynamicTargeted, self).__init__(env, scale, out_function)
+	def __init__(self, env, scale = 1., norm = None, strict_epsilon = None, beta = .01, out_function = nn.functional.sigmoid):
+		super(DynamicTargeted, self).__init__(env, scale, out_function, norm, strict_epsilon, beta)
 		self.out_function = self.env.out_function if out_function is None else out_function
 
 	def _get_reward(self, obs, action, **kwargs):
@@ -316,10 +321,7 @@ class DynamicTargeted(RewardWrapper):
 			raise gym.error.Error('Elements of target_class must be within range of model.')
 
 		# Determine norm penalty
-		if self.norm is not None:
-			norm_penalty = self.norm_on_batch(action - obs[0], self.norm)
-		else:
-			norm_penalty = 0
+		norm_penalty = self._compute_norm_penalty(action, obs[0])
 
 		# Compute reward, gather info
 		reward = ((target_class == prediction.data).float() * confidence.data
@@ -335,8 +337,8 @@ class DynamicTargeted(RewardWrapper):
 
 
 class DefendMode(RewardWrapper):
-	def __init__(self, env, scale = 1., out_function = nn.functional.sigmoid):
-		super(DefendMode, self).__init__(env, scale, out_function)
+	def __init__(self, env, scale = 1., norm = None, strict_epsilon = None, beta = .01, out_function = nn.functional.sigmoid):
+		super(DefendMode, self).__init__(env, scale, out_function, norm, strict_epsilon, beta)
 
 	def _get_reward(self, obs, action, **kwargs):
 		# Establish ground truth for image
@@ -347,13 +349,10 @@ class DefendMode(RewardWrapper):
 		confidence, prediction = torch.max(outs, 1)
 
 		# Determine norm penalty
-		if self.norm is not None:
-			norm_penalty = self.norm_on_batch(action - obs[0], self.norm)
-		else:
-			norm_penalty = 0
+		norm_penalty = self._compute_norm_penalty(action, obs[0])
 
 		# Compute reward, gather info
-		if self.unwrapped._check_norm_validity() and self._strict(norm_penalty):
+		if self._check_norm_validity() and self._strict(norm_penalty):
 			reward = ((ground_truth == prediction.data).float() * confidence.data
 				- (ground_truth != prediction.data).float() * confidence.data
 				- norm_penalty)
@@ -367,6 +366,7 @@ class DefendMode(RewardWrapper):
 			'norm':norm_penalty if self.norm is not None else None}
 
 		return reward, info
+
 
 # TODO
 class BadNets(RewardWrapper):
