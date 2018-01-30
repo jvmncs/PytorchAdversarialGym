@@ -23,11 +23,6 @@ class AdvEnv(gym.Env):
 		dataset (subclass of torch.utils.data.Dataset): The dataset we're using to attack.
 			Currently, only Pytorch Dataset objects are supported.
 			Note: ToTensor transform must be included.
-		norm (float, optional): P value of L-p norm to use for contrained penalty on reward.
-			Only called in reward wrappers. If None, no norm penalty is taken.
-		strict_epsilon (float, optional): If not None, attacks outside of an epsilon ball around
-			the original image receive some predefined reward specified by the reward wrapper.
-			By default, this predefined reward is the minimum possible reward.
 		batch_size (int, optional): Number of instances for the target_model to classify per step.
 		episode_length (positive integer, optional): Specifies the number of steps to include in
 			each episode.  Default is len(dataset)//batch_size.
@@ -42,7 +37,7 @@ class AdvEnv(gym.Env):
 			For this reason, we disable CUDNN if a seed is specified.
 
 	"""
-	def __init__(self, target_model, dataset, norm = None, strict_epsilon = None, batch_size = 1,
+	def __init__(self, target_model, dataset, batch_size = 1,
 			episode_length = None, sampler = None, num_workers = 0,
 			use_cuda = torch.cuda.is_available(), seed = None):
 		super(AdvEnv).__init__()
@@ -104,7 +99,7 @@ class AdvEnv(gym.Env):
 	def _reset(self):
 		self.data_loader = DataLoader(self.dataset, batch_size = self.batch_size, sampler = self.sampler, num_workers = self.num_workers)
 		self.iterator = iter(self.data_loader)
-		self.successor = self.iterator.__next__()
+		self.successor = next(self.iterator)
 		if self.use_cuda:
 			self.successor[0] = self.successor[0].cuda()
 			self.successor[1] = self.successor[1].cuda()
@@ -127,6 +122,3 @@ class AdvEnv(gym.Env):
 
 	def _check_sampler(self):
 		return isinstance(self.sampler, Sampler)
-
-	def _check_norm_validity(self):
-		return self.norm is not None or self.strict_epsilon is None

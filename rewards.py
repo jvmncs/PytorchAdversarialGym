@@ -16,8 +16,16 @@ class RewardWrapper(gym.Wrapper):
 		scale (float): controls reward scaling.
 		out_function (function): the final activation function to use for computing confidence
 			for each attack. If None, uses the identity function.
+		norm (float, optional): P value of L-p norm to use for contrained penalty on reward.
+			Only called in reward wrappers. If None, no norm penalty is taken.
+		strict_epsilon (float, optional): If not None, attacks outside of an epsilon ball around
+			the original image receive some predefined reward specified by the reward wrapper.
+			By default, this predefined reward is the minimum possible reward.
+		beta (float, default: .01): Strength of norm_penalty, controlling tradeoff between
+			magnitude of perturbation. Good values are context-dependent, but generally fall within
+			the interval [.0001, .1].  Lower beta allows for rewarding more perturbed attacks.
 	"""
-	def __init__(self, env, scale, out_function, **kwargs):
+	def __init__(self, env, scale, out_function, norm = None, strict_epsilon = None, beta = .01, **kwargs):
 		super(RewardWrapper, self).__init__(env)
 		self.reward_range = (-scale, scale)
 		self.scale = scale
@@ -29,8 +37,8 @@ class RewardWrapper(gym.Wrapper):
 
 		self.target_model = self.unwrapped.target_model
 		self.dataset = self.unwrapped.dataset
-		self.norm = self.unwrapped.norm
-		self.strict_epsilon = self.unwrapped.strict_epsilon
+		self.norm = norm
+		self.strict_epsilon = strict_epsilon
 		self.action_space = self.unwrapped.action_space
 		self.observation_space = self.unwrapped.observation_space
 		self.episode_length = self.unwrapped.episode_length
@@ -47,7 +55,7 @@ class RewardWrapper(gym.Wrapper):
 		# (either episode_length has been reached or DataLoader iterator is exhausted)
 		try:
 			current_obs = self.successor
-			self.successor = self.iterator.__next__()
+			self.successor = next(self.iterator)
 			self.unwrapped.ix += 1
 			if self.unwrapped.ix >= self.episode_length:
 				raise StopIteration
@@ -96,6 +104,9 @@ class RewardWrapper(gym.Wrapper):
 
 	def  _failed_strict(self,**kwargs):
 		return min(reward_range)
+
+	def _check_norm_validity(self):
+		return self.norm is not None or self.strict_epsilon is None
 
 
 class Untargeted(RewardWrapper):
@@ -168,7 +179,7 @@ class StaticTargeted(RewardWrapper):
 		try:
 			current_obs = self.successor
 			if self.skip_target_class:
-				self.successor = self.iterator.__next__()
+				self.successor = next(self.iterator)
 				while (self.successor[1] == self.target_class).any():
 					newly_sampled = self._sample_for_skip((self.successor[1] == self.target_class).sum())
 					target_mask = (self.successor[1] == self.target_class)
@@ -177,7 +188,7 @@ class StaticTargeted(RewardWrapper):
 					self.successor[0][expanded_mask] = newly_sampled[0]
 					self.successor[1][target_mask] = newly_sampled[1]
 			else:
-				self.successor = self.iterator.__next__()
+				self.successor = next(self.iterator)
 			self.ix += 1
 			if self.ix >= self.episode_length:
 				raise StopIteration
@@ -230,7 +241,7 @@ class StaticTargeted(RewardWrapper):
 		if self.skip_target_class:
 			self.data_loader = DataLoader(self.dataset, batch_size = self.batch_size, sampler = self.sampler, num_workers = self.num_workers)
 			self.iterator = iter(self.data_loader)
-			self.successor = self.iterator.__next__()
+			self.successor = next(self.iterator)
 			while (self.successor[1] == self.target_class).any():
 				newly_sampled = self._sample_for_skip((self.successor[1] == self.target_class).sum())
 				target_mask = (self.successor[1] == self.target_class)

@@ -22,7 +22,9 @@ Roadmap:
 - [x] Generalize confidence calculation to other activations
 - [x] Implement strict argument for strict epsilon ball enforcement
 - [x] Test basic functionality of Untargeted and StaticTargeted wrappers
+- [ ] Formalize unit testing
 - [ ] Test basic functionality of DynamicTargeted and DefendMode wrappers
+- [ ] Spec out and integrate CI platform
 - [ ] Comment/document reward Wrappers (might need to do some more)
 - [ ] Test new features
 - [ ] Add [BadNets](https://arxiv.org/abs/1708.06733) functionality
