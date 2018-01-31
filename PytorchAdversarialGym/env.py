@@ -56,7 +56,7 @@ class AdvEnv(gym.Env):
 
 		# Unpack args
 		if seed is not None:
-			torch.backend.cudnn.enabled = False
+			torch.backends.cudnn.enabled = False
 		self.seedey = self.seed(seed)
 		self.target_model = target_model.cuda() if use_cuda else target_model.cpu()
 		self.dataset = dataset
