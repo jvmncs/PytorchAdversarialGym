@@ -47,8 +47,8 @@ class AdvEnv(gym.Env):
 		self.LongTensor = torch.cuda.LongTensor if self.use_cuda else torch.LongTensor
 
 		# Fail early and often
-		if not self._check_model(model):
-			raise gym.error.Error('Model type {} not supported.'.format(type(model)) +
+		if not self._check_model(target_model):
+			raise gym.error.Error('Model type {} not supported.'.format(type(target_model)) +
 							  ' Currently, target_model must be a subclass of torch.nn.Module.')
 		if not self._check_dataset(dataset):
 			raise gym.error.Error('Dataset type {} not supported.'.format(type(dataset)) +
