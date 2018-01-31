@@ -53,18 +53,20 @@ class AdvEnv(gym.Env):
 		if not self._check_dataset(dataset):
 			raise gym.error.Error('Dataset type {} not supported.'.format(type(dataset)) +
 							  ' Currently, dataset must be a subclass of torch.utils.data.Dataset containing (FloatTensor, LongTensor) instances.')
-		if not self._check_sampler(sampler):
-			raise gym.error.Error('Sampler type {} not supported.'.format(type(sampler)) +
-							   ' Currently, sampler must be a subclass of torch.utils.data.sampler.Sampler.')
 
 		# Unpack args
 		if seed is not None:
 			torch.backend.cudnn.enabled = False
 		self.seedey = self._seed(seed)
+		self.sampler = UniformSampler(self.dataset, self.torch_rng, len(self.dataset)) if not sampler else sampler
 		self.target_model = target_model.cuda() if use_cuda else target_model.cpu()
 		self.dataset = dataset
 		self.norm = norm
 		self.strict_epsilon = strict_epsilon
+
+		if not self._check_sampler(self.sampler):
+			raise gym.error.Error('Sampler type {} not supported.'.format(type(self.sampler)) +
+							   ' Currently, sampler must be a subclass of torch.utils.data.sampler.Sampler.')
 
 		# Construct necessaries
 		space_shape = self.dataset[0][0].size()
@@ -72,7 +74,6 @@ class AdvEnv(gym.Env):
 		self.action_space = TensorBox(0, 1, space_shape, self.use_cuda)
 		self.observation_space = TensorBox(0, 1, space_shape, self.use_cuda)
 		self.episode_length = len(self.dataset)//batch_size if not episode_length else episode_length
-		self.sampler = UniformSampler(self.dataset, self.torch_rng, len(self.dataset)) if not sampler else sampler
 		self.batch_size = batch_size
 		self.num_workers = num_workers
 		self.data_loader = DataLoader(self.dataset, batch_size = self.batch_size, sampler = self.sampler, num_workers = self.num_workers)
