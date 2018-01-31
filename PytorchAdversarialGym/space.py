@@ -13,7 +13,7 @@ class TensorBox(gym.Space):
         shape (torch.Size or subclass of tuple):
     """
     def __init__(self, low, high, shape, use_cuda):
-        super(TensorBox, self).__init__(shape)
+        super(TensorBox, self).__init__(shape, None)
         assert isinstance(low, (int, float)) and isinstance(high, (int, float)) and isinstance(shape, tuple)
         self.low = low
         self.high = high
