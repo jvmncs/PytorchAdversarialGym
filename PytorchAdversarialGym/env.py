@@ -57,7 +57,7 @@ class AdvEnv(gym.Env):
 		# Unpack args
 		if seed is not None:
 			torch.backend.cudnn.enabled = False
-		self.seedey = self._seed(seed)
+		self.seedey = self.seed(seed)
 		self.target_model = target_model.cuda() if use_cuda else target_model.cpu()
 		self.dataset = dataset
 		self.sampler = UniformSampler(self.dataset, self.torch_rng, len(self.dataset)) if not sampler else sampler
@@ -76,9 +76,9 @@ class AdvEnv(gym.Env):
 		self.num_workers = num_workers
 		self.data_loader = DataLoader(self.dataset, batch_size = self.batch_size, sampler = self.sampler, num_workers = self.num_workers)
 		self.iterator = iter(self.data_loader)
-		self._reset()
+		self.reset()
 
-	def _step(self, action, **kwargs):
+	def step(self, action, **kwargs):
 		# Overridden in RewardWrapper
 		raise NotImplementedError
 
@@ -86,7 +86,7 @@ class AdvEnv(gym.Env):
 		# Must be overridden by a subclass of RewardWrapper
 		raise NotImplementedError
 
-	def _seed(self, seed):
+	def seed(self, seed):
 		integer_types = (int,)
 		if seed is not None and not (isinstance(seed, integer_types) and 0 <= seed):
 			raise gym.error.Error('Seed must be a non-negative integer or omitted, not {}.'.format(type(seed)))
@@ -94,7 +94,7 @@ class AdvEnv(gym.Env):
 		self.seedey = seed
 		return [seed]
 
-	def _reset(self):
+	def reset(self):
 		self.data_loader = DataLoader(self.dataset, batch_size = self.batch_size, sampler = self.sampler, num_workers = self.num_workers)
 		self.iterator = iter(self.data_loader)
 		self.successor = next(self.iterator)

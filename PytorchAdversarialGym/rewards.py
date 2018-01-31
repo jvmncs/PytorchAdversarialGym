@@ -80,18 +80,14 @@ class RewardWrapper(gym.Wrapper):
 		reward, info = self._get_reward(current_obs, action, **kwargs)
 		return self.successor, reward, self.unwrapped.done, info
 
-	
-	def step(self, action, **kwargs):
-		return self._step(action, **kwargs)
-
 	def _get_reward(self, obs, action, **kwargs):
 		raise NotImplementedError
 
 	def seed(self, seed):
-		return self.unwrapped._seed(seed)
+		return self.unwrapped.seed(seed)
 
 	def reset(self):
-		return self.unwrapped._reset()
+		return self.unwrapped.reset()
 
 	def _attack(self, action):
 		action = Variable(action, volatile = True)
@@ -186,7 +182,7 @@ class StaticTargeted(RewardWrapper):
 		self.out_function = self.env.out_function if out_function is None else out_function
 
 	def step(self, action, **kwargs):
-		# Same as base _step method, but allows skipping images belonging to the target class
+		# Same as base step method, but allows skipping images belonging to the target class
 		try:
 			current_obs = self.successor
 			if self.skip_target_class:
@@ -264,7 +260,7 @@ class StaticTargeted(RewardWrapper):
 			self.ix = 0
 			return self.successor
 		else:
-			return self.unwrapped._reset()
+			return self.unwrapped.reset()
 
 	def _sample_for_skip(self, batch_size):
 		# Sample from dataset -- necessary so we don't mess up the index of the DataLoader
