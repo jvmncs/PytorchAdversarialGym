@@ -28,7 +28,7 @@ class RewardWrapper(gym.Wrapper):
 	"""
 	def __init__(self, env, scale, out_function, norm = None, strict_epsilon = None, beta = .01, **kwargs):
 		super(RewardWrapper, self).__init__(env)
-		
+
 		if not self._check_norm_validity(norm, strict_epsilon):
 			warnings.warn('Argument strict_epsilon is meaningless when \'norm\' is None.')
 
@@ -114,8 +114,8 @@ class RewardWrapper(gym.Wrapper):
 		else:
 			return True
 
-	def _check_norm_validity(self):
-		return self.norm is not None or self.strict_epsilon is None
+	def _check_norm_validity(self, norm, strict_epsilon):
+		return norm is not None or strict_epsilon is None
 
 	def _failed_strict(self,**kwargs):
 		return min(reward_range)
