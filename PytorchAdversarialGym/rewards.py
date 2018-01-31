@@ -56,7 +56,7 @@ class RewardWrapper(gym.Wrapper):
 		self.iterator = iter(self.data_loader)
 		self.successor = self.unwrapped.successor
 
-	def _step(self, action, **kwargs):
+	def step(self, action, **kwargs):
 		# Iterate until StopIteration 
 		# (either episode_length has been reached or DataLoader iterator is exhausted)
 		try:
@@ -87,10 +87,10 @@ class RewardWrapper(gym.Wrapper):
 	def _get_reward(self, obs, action, **kwargs):
 		raise NotImplementedError
 
-	def _seed(self, seed):
+	def seed(self, seed):
 		return self.unwrapped._seed(seed)
 
-	def _reset(self):
+	def reset(self):
 		return self.unwrapped._reset()
 
 	def _attack(self, action):
@@ -185,7 +185,7 @@ class StaticTargeted(RewardWrapper):
 		self.skip_target_class = skip_target_class
 		self.out_function = self.env.out_function if out_function is None else out_function
 
-	def _step(self, action, **kwargs):
+	def step(self, action, **kwargs):
 		# Same as base _step method, but allows skipping images belonging to the target class
 		try:
 			current_obs = self.successor
@@ -245,7 +245,7 @@ class StaticTargeted(RewardWrapper):
 
 		return reward, info
 
-	def _reset(self):
+	def reset(self):
 		if self.skip_target_class:
 			self.data_loader = DataLoader(self.dataset, batch_size = self.batch_size, sampler = self.sampler, num_workers = self.num_workers)
 			self.iterator = iter(self.data_loader)
