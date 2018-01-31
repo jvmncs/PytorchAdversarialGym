@@ -61,8 +61,6 @@ class AdvEnv(gym.Env):
 		self.target_model = target_model.cuda() if use_cuda else target_model.cpu()
 		self.dataset = dataset
 		self.sampler = UniformSampler(self.dataset, self.torch_rng, len(self.dataset)) if not sampler else sampler
-		self.norm = norm
-		self.strict_epsilon = strict_epsilon
 
 		if not self._check_sampler(self.sampler):
 			raise gym.error.Error('Sampler type {} not supported.'.format(type(self.sampler)) +
