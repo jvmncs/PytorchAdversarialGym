@@ -372,3 +372,4 @@ class DefendMode(RewardWrapper):
 class BadNets(RewardWrapper):
 	def __init__(self, env, scale =  1., out_function = nn.functional.sigmoid):
 		super(BadNets, self).__init__(env, scale, out_function)
+		raise NotImplementedError
