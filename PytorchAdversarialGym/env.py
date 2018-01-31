@@ -46,6 +46,20 @@ class AdvEnv(gym.Env):
 		self.Tensor = torch.cuda.FloatTensor if self.use_cuda else torch.FloatTensor
 		self.LongTensor = torch.cuda.LongTensor if self.use_cuda else torch.LongTensor
 
+		# Fail early and often
+		if not self._check_dataset(dataset):
+			raise gym.error.Error('Dataset type {} not supported.'.format(type(self.dataset)) +
+							  'Currently, dataset must be a subclass of torch.utils.data.Dataset containing FloatTensors')
+
+		if not self._check_model(model):
+			raise gym.error.Error('Model type {} not supported.'.format(type(model)) +
+							  ' Currently, target_model must be a subclass of torch.nn.Module.')
+
+		if not self._check_sampler(sampler):
+			raise gym.error.Error('Sampler type {} not supported.'.format(type(self.sampler)) +
+							   'Currently, sampler must be a subclass of torch.utils.data.sampler.Sampler.')
+
+		# Unpack args
 		if seed is not None:
 			torch.backend.cudnn.enabled = False
 		self.seedey = self._seed(seed)
@@ -53,27 +67,14 @@ class AdvEnv(gym.Env):
 		self.dataset = dataset
 		self.norm = norm
 		self.strict_epsilon = strict_epsilon
+
+		# Construct necessaries
 		space_shape = self.dataset[0][0].size()
 		space_shape = (batch_size, *space_shape[1:])
 		self.action_space = TensorBox(0, 1, space_shape, self.use_cuda)
 		self.observation_space = TensorBox(0, 1, space_shape, self.use_cuda)
 		self.episode_length = len(self.dataset)//batch_size if not episode_length else episode_length
 		self.sampler = UniformSampler(self.dataset, self.torch_rng, len(self.dataset)) if not sampler else sampler
-
-		if not self._check_dataset():
-			raise gym.error.Error('Dataset type {} not supported.'.format(type(self.dataset)) +
-							  'Currently, dataset must be a subclass of torch.utils.data.Dataset containing FloatTensors')
-
-		if not self._check_model():
-			raise gym.error.Error('Model type {} not supported.'.format(type(self.target_model)) +
-							  ' Currently, target_model must be a subclass of torch.nn.Module.')
-
-		if not self._check_sampler():
-			raise gym.error.Error('Sampler type {} not supported.'.format(type(self.sampler)) +
-							   'Currently, sampler must be a subclass of torch.utils.data.sampler.Sampler.')
-		if not self._check_norm_validity():
-			warnings.warn('Argument strict_epsilon is meaningless when \'norm\' is None.')
-
 		self.batch_size = batch_size
 		self.num_workers = num_workers
 		self.data_loader = DataLoader(self.dataset, batch_size = self.batch_size, sampler = self.sampler, num_workers = self.num_workers)
@@ -114,11 +115,11 @@ class AdvEnv(gym.Env):
 			norm_penalty = torch.norm(norm_penalty, p, -1)
 		return norm_penalty
 
-	def _check_model(self):
-		return isinstance(self.target_model, nn.Module)
+	def _check_model(self, model):
+		return isinstance(model, nn.Module)
 
-	def _check_dataset(self):
-		return isinstance(self.dataset, Dataset) and (isinstance(self.dataset[0][0], torch.Tensor))
+	def _check_dataset(self, dataset):
+		return isinstance(dataset, Dataset) and (isinstance(dataset[0][0], self.Tensor)) and (isinstance(dataset[0][1], self.LongTensor))
 
-	def _check_sampler(self):
-		return isinstance(self.sampler, Sampler)
+	def _check_sampler(self, sampler):
+		return isinstance(sampler, Sampler)
