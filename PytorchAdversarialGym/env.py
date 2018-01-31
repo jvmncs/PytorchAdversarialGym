@@ -58,9 +58,9 @@ class AdvEnv(gym.Env):
 		if seed is not None:
 			torch.backend.cudnn.enabled = False
 		self.seedey = self._seed(seed)
-		self.sampler = UniformSampler(self.dataset, self.torch_rng, len(self.dataset)) if not sampler else sampler
 		self.target_model = target_model.cuda() if use_cuda else target_model.cpu()
 		self.dataset = dataset
+		self.sampler = UniformSampler(self.dataset, self.torch_rng, len(self.dataset)) if not sampler else sampler
 		self.norm = norm
 		self.strict_epsilon = strict_epsilon
 
