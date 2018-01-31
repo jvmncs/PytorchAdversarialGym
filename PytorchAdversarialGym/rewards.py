@@ -144,7 +144,7 @@ class Untargeted(RewardWrapper):
 		norm_penalty = self._compute_norm_penalty(action, obs[0])
 
 		# Compute reward, gather info
-		if self._check_norm_validity() and self._strict(norm_penalty):
+		if self._check_norm_validity(self.norm, self.strict_epsilon) and self._strict(norm_penalty):
 			reward = ((ground_truth != prediction.data).float() * confidence.data
 				- (ground_truth == prediction.data).float() * confidence.data
 				- norm_penalty)
