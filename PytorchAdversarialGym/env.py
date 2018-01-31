@@ -48,7 +48,7 @@ class AdvEnv(gym.Env):
 
 		# Fail early and often
 		if not self._check_dataset(dataset):
-			raise gym.error.Error('Dataset type {} not supported.'.format(type(self.dataset)) +
+			raise gym.error.Error('Dataset type {} not supported.'.format(type(dataset)) +
 							  'Currently, dataset must be a subclass of torch.utils.data.Dataset containing FloatTensors')
 
 		if not self._check_model(model):
@@ -56,7 +56,7 @@ class AdvEnv(gym.Env):
 							  ' Currently, target_model must be a subclass of torch.nn.Module.')
 
 		if not self._check_sampler(sampler):
-			raise gym.error.Error('Sampler type {} not supported.'.format(type(self.sampler)) +
+			raise gym.error.Error('Sampler type {} not supported.'.format(type(sampler)) +
 							   'Currently, sampler must be a subclass of torch.utils.data.sampler.Sampler.')
 
 		# Unpack args
