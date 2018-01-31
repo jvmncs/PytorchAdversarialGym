@@ -2,6 +2,7 @@ import gym
 import torch
 
 
+# TODO: use numpy low/high API
 class TensorBox(gym.Space):
     """
     Implementing the Box space with torch.Tensor instead of ndarray.

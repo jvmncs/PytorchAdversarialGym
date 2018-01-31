@@ -8,8 +8,8 @@ from torch.utils.data.sampler import Sampler
 
 import warnings
 
-from space import TensorBox
-from util import UniformSampler
+from .space import TensorBox
+from .util import UniformSampler
 
 
 class AdvEnv(gym.Env):
