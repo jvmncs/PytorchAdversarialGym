@@ -22,6 +22,7 @@ Roadmap:
 - [x] Generalize confidence calculation to other activations
 - [x] Implement strict argument for strict epsilon ball enforcement
 - [x] Test basic functionality of Untargeted and StaticTargeted wrappers
+- [ ] Extend TensorBox to use numpy low/high API
 - [ ] Formalize unit testing
 - [ ] Test basic functionality of DynamicTargeted and DefendMode wrappers
 - [ ] Spec out and integrate CI platform
