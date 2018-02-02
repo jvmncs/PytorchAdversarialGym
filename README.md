@@ -24,6 +24,7 @@ Roadmap:
 - [x] Test basic functionality of Untargeted and StaticTargeted wrappers
 - [ ] Extend TensorBox to use numpy low/high API
 - [ ] Formalize unit testing
+- [ ] Update with Gym's new closer registry
 - [ ] Test basic functionality of DynamicTargeted and DefendMode wrappers
 - [ ] Spec out and integrate CI platform
 - [ ] Comment/document reward Wrappers (might need to do some more)
