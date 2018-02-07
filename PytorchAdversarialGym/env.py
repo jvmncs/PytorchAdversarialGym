@@ -116,7 +116,10 @@ class AdvEnv(gym.Env):
 		return isinstance(model, nn.Module)
 
 	def _check_dataset(self, dataset):
-		return isinstance(dataset, Dataset) and (isinstance(dataset[0][0], self.Tensor)) and (isinstance(dataset[0][1], self.LongTensor))
+		dataset_check = isinstance(dataset, Dataset)
+		input_check = (isinstance(dataset[0][0], self.Tensor) or isinstance(dataset[0][0].cuda(), self.Tensor))
+		label_check = (isinstance(dataset[0][1], self.LongTensor) or isinstance(dataset[0][1], int) or isinstance(dataset[0][1].cuda(), self.LongTensor))
+		return dataset_check and input_check and label_check
 
 	def _check_sampler(self, sampler):
 		return isinstance(sampler, Sampler)

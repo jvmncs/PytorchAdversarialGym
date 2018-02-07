@@ -55,6 +55,8 @@ class RewardWrapper(gym.Wrapper):
 		self.data_loader = self.unwrapped.data_loader
 		self.iterator = iter(self.data_loader)
 		self.successor = self.unwrapped.successor
+		self.done = self.unwrapped.done
+		self.ix = self.unwrapped.ix
 
 	def step(self, action, **kwargs):
 		# Iterate until StopIteration 
@@ -138,7 +140,10 @@ class Untargeted(RewardWrapper):
 
 		# Attack target model
 		outs = self._attack(action)
-		confidence, prediction = torch.max(outs, 1)
+		if len(outs.squeeze().size())>1:
+			confidence, prediction = torch.max(outs, 1)
+		else:
+			confidence, prediction = outs.squeeze(), outs.squeeze().round().long()
 
 		# Determine norm penalty
 		norm_penalty = self._compute_norm_penalty(action, obs[0])
@@ -220,7 +225,10 @@ class StaticTargeted(RewardWrapper):
 
 		# Attack target model
 		outs = self._attack(action)
-		confidence, prediction = torch.max(outs, 1)
+		if len(outs.squeeze().size())>1:
+			confidence, prediction = torch.max(outs, 1)
+		else:
+			confidence, prediction = outs, outs.round()
 
 		# Determine norm penalty
 		norm_penalty = self._compute_norm_penalty(action, obs[0])
@@ -256,7 +264,7 @@ class StaticTargeted(RewardWrapper):
 			if self.use_cuda:
 				self.successor[0] = self.successor[0].cuda()
 				self.successor[1] = self.successor[1].cuda()
-			self.unwrapped.done = False
+			self.done = False
 			self.ix = 0
 			return self.successor
 		else:
@@ -303,7 +311,10 @@ class DynamicTargeted(RewardWrapper):
 
 		# Attack target model
 		outs = self._attack(action)
-		confidence, prediction = torch.max(outs, -1)
+		if len(outs.squeeze().size())>1:
+			confidence, prediction = torch.max(outs, 1)
+		else:
+			confidence, prediction = outs, outs.round()
 
 		# Unpack target_class and make sure it's in the right range
 		try:
@@ -346,7 +357,10 @@ class DefendMode(RewardWrapper):
 
 		# Attack target model
 		outs = self._attack(action)
-		confidence, prediction = torch.max(outs, 1)
+		if len(outs.squeeze().size())>1:
+			confidence, prediction = torch.max(outs, 1)
+		else:
+			confidence, prediction = outs, outs.round()
 
 		# Determine norm penalty
 		norm_penalty = self._compute_norm_penalty(action, obs[0])
