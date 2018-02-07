@@ -37,7 +37,7 @@ class TestNotImplemented(unittest.TestCase):
 	def test_step(self):
 		self.assertRaises(NotImplementedError, self.env.step, self.action_0)
 
-	def test_get_reward(self)
+	def test_get_reward(self):
 		self.assertRaises(NotImplementedError, self.env._get_reward, self.env.successor, self.action_0)
 
 class TestSanityChecks(unittest.TestCase):
